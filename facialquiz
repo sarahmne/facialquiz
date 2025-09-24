@@ -65,7 +65,8 @@
 </head>
 <body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
     <div id="app" class="w-full max-w-4xl container mx-auto">
-        <!-- Main Application View -->
+        <!-- Default Loading Message -->
+        <div class="text-center text-gray-500">Loading...</div>
     </div>
 
     <!-- Custom Modal for Messages -->
@@ -83,7 +84,6 @@
         import { getFirestore, collection, addDoc, getDocs, onSnapshot, query, doc, setDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Firebase global variables are provided by the canvas environment
-        // NOTE: Added a check for an empty string before parsing to prevent errors.
         const firebaseConfig = typeof __firebase_config === 'string' && __firebase_config.trim() !== '' ? JSON.parse(__firebase_config) : {};
         const authToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
@@ -150,29 +150,6 @@
         ];
 
         // --- Core Application Logic ---
-
-        const initializeFirebase = () => {
-            if (Object.keys(firebaseConfig).length > 0) {
-                const app = initializeApp(firebaseConfig);
-                db = getFirestore(app);
-                auth = getAuth(app);
-            } else {
-                console.error("Firebase config is missing. The app will not function correctly.");
-            }
-        };
-
-        const signIn = async () => {
-            if (!auth) return;
-            try {
-                if (authToken) {
-                    await signInWithCustomToken(auth, authToken);
-                } else {
-                    await signInAnonymously(auth);
-                }
-            } catch (error) {
-                console.error("Firebase auth error:", error);
-            }
-        };
 
         const showMessageModal = (title, message, callback = null) => {
             const modal = document.getElementById('message-modal');
@@ -665,7 +642,6 @@
         };
 
         // --- Initialize the App ---
-        // NOTE: The main initialization logic has been moved here and restructured to be more robust.
         const initApp = async () => {
             try {
                 // Step 1: Initialize Firebase services using the robust config check
@@ -685,27 +661,30 @@
             }
 
             // Step 2: Set up the auth state listener first.
-            // This is the most reliable way to handle the first render,
-            // as it waits for the authentication state to be determined.
+            // This is the most reliable way
             onAuthStateChanged(auth, async (user) => {
+                if (user) {
+                    userId = user.uid;
+                } else {
+                    try {
+                        // Sign in anonymously if no user is found
+                        const anonymousUser = await signInAnonymously(auth);
+                        userId = anonymousUser.user.uid;
+                    } catch (error) {
+                        console.error("Anonymous sign-in failed:", error);
+                    }
+                }
                 isAuthReady = true;
-                // Use a proper unique ID for unauthenticated users
-                userId = user?.uid || crypto.randomUUID();
                 renderApp();
             });
 
-            // Step 3: Now, attempt to sign in. The listener above will handle
-            // the render once the sign-in is complete.
-            try {
-                if (authToken) {
+            // Step 3: Handle the initial auth token for seamless sign-in
+            if (authToken) {
+                try {
                     await signInWithCustomToken(auth, authToken);
-                } else {
-                    await signInAnonymously(auth);
+                } catch (error) {
+                    console.error("Custom token sign-in failed:", error);
                 }
-            } catch (error) {
-                console.error("Firebase auth error during initial sign-in:", error);
-                // If authentication fails, the page should still render the "Loading..." state,
-                // and the user can be directed to the console for errors.
             }
         };
 
