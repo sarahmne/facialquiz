@@ -172,6 +172,16 @@
                 return;
             }
 
+            if (Object.keys(firebaseConfig).length === 0) {
+                appEl.innerHTML = `
+                    <div class="form-container">
+                        <h1 class="text-3xl font-bold text-gray-800 mb-4">Application Error</h1>
+                        <p class="text-gray-600">The application failed to load because the **Firebase configuration** is missing. This is necessary to connect to the database.</p>
+                    </div>
+                `;
+                return;
+            }
+
             if (currentView === 'clientForm') {
                 renderClientForm(appEl);
             } else if (currentView === 'therapistLogin') {
@@ -644,54 +654,48 @@
         // --- Initialize the App ---
         const initApp = async () => {
             try {
-                // Step 1: Initialize Firebase services using the robust config check
-                if (Object.keys(firebaseConfig).length > 0) {
-                    const app = initializeApp(firebaseConfig);
-                    db = getFirestore(app);
-                    auth = getAuth(app);
-                } else {
-                    console.error("Firebase config is missing. Application will not function correctly.");
-                    document.getElementById('app').innerHTML = `<div class="text-center text-red-500">Application failed to load: Missing Firebase configuration.</div>`;
+                // Step 1: Check for firebase config before initializing
+                if (Object.keys(firebaseConfig).length === 0) {
+                    isAuthReady = true;
+                    renderApp();
                     return;
                 }
-            } catch (error) {
-                console.error("Error initializing Firebase:", error);
-                document.getElementById('app').innerHTML = `<div class="text-center text-red-500">Application failed to load due to a configuration error. Check the console for details.</div>`;
-                return;
-            }
+                
+                // Step 2: Initialize Firebase services
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                
+                // Step 3: Set up the auth state listener first.
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        userId = user.uid;
+                    } else {
+                        try {
+                            // Sign in anonymously if no user is found
+                            const anonymousUser = await signInAnonymously(auth);
+                            userId = anonymousUser.user.uid;
+                        } catch (error) {
+                            console.error("Anonymous sign-in failed:", error);
+                        }
+                    }
+                    isAuthReady = true;
+                    renderApp();
+                });
 
-            // Step 2: Set up the auth state listener first.
-            // This is the most reliable way
-            onAuthStateChanged(auth, async (user) => {
-                if (user) {
-                    userId = user.uid;
-                } else {
+                // Step 4: Handle the initial auth token for seamless sign-in
+                if (authToken) {
                     try {
-                        // Sign in anonymously if no user is found
-                        const anonymousUser = await signInAnonymously(auth);
-                        userId = anonymousUser.user.uid;
+                        await signInWithCustomToken(auth, authToken);
                     } catch (error) {
-                        console.error("Anonymous sign-in failed:", error);
+                        console.error("Custom token sign-in failed:", error);
                     }
                 }
-                isAuthReady = true;
-                renderApp();
-            });
-
-            // Step 3: Handle the initial auth token for seamless sign-in
-            if (authToken) {
-                try {
-                    await signInWithCustomToken(auth, authToken);
-                } catch (error) {
-                    console.error("Custom token sign-in failed:", error);
-                }
+            } catch (error) {
+                console.error("Error during app initialization:", error);
+                document.getElementById('app').innerHTML = `<div class="text-center text-red-500">Application failed to load due to a configuration error. Check the console for details.</div>`;
             }
         };
-
-        initApp();
-    </script>
-</body>
-</html>
 
         initApp();
     </script>
