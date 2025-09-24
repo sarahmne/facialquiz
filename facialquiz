@@ -83,7 +83,8 @@
         import { getFirestore, collection, addDoc, getDocs, onSnapshot, query, doc, setDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Firebase global variables are provided by the canvas environment
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        // NOTE: Added a check for an empty string before parsing to prevent errors.
+        const firebaseConfig = typeof __firebase_config === 'string' && __firebase_config.trim() !== '' ? JSON.parse(__firebase_config) : {};
         const authToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
@@ -664,20 +665,54 @@
         };
 
         // --- Initialize the App ---
+        // NOTE: The main initialization logic has been moved here and restructured to be more robust.
         const initApp = async () => {
-            initializeFirebase();
-            await signIn();
+            try {
+                // Step 1: Initialize Firebase services using the robust config check
+                if (Object.keys(firebaseConfig).length > 0) {
+                    const app = initializeApp(firebaseConfig);
+                    db = getFirestore(app);
+                    auth = getAuth(app);
+                } else {
+                    console.error("Firebase config is missing. Application will not function correctly.");
+                    document.getElementById('app').innerHTML = `<div class="text-center text-red-500">Application failed to load: Missing Firebase configuration.</div>`;
+                    return;
+                }
+            } catch (error) {
+                console.error("Error initializing Firebase:", error);
+                document.getElementById('app').innerHTML = `<div class="text-center text-red-500">Application failed to load due to a configuration error. Check the console for details.</div>`;
+                return;
+            }
 
-            // Set up the listener after Firebase is initialized
-            onAuthStateChanged(auth, (user) => {
-                userId = user?.uid || null;
+            // Step 2: Set up the auth state listener first.
+            // This is the most reliable way to handle the first render,
+            // as it waits for the authentication state to be determined.
+            onAuthStateChanged(auth, async (user) => {
                 isAuthReady = true;
-                // The initial view is always the client form.
-                // The therapist view is only accessible after logging in.
-                currentView = 'clientForm';
+                // Use a proper unique ID for unauthenticated users
+                userId = user?.uid || crypto.randomUUID();
                 renderApp();
             });
+
+            // Step 3: Now, attempt to sign in. The listener above will handle
+            // the render once the sign-in is complete.
+            try {
+                if (authToken) {
+                    await signInWithCustomToken(auth, authToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (error) {
+                console.error("Firebase auth error during initial sign-in:", error);
+                // If authentication fails, the page should still render the "Loading..." state,
+                // and the user can be directed to the console for errors.
+            }
         };
+
+        initApp();
+    </script>
+</body>
+</html>
 
         initApp();
     </script>
