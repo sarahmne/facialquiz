@@ -664,25 +664,22 @@
         };
 
         // --- Initialize the App ---
-        onAuthStateChanged(auth, (user) => {
-            if (user) {
-                userId = user.uid;
+        const initApp = async () => {
+            initializeFirebase();
+            await signIn();
+
+            // Set up the listener after Firebase is initialized
+            onAuthStateChanged(auth, (user) => {
+                userId = user?.uid || null;
                 isAuthReady = true;
-                // Check if user is therapist based on a specific UID or
-                // a hardcoded password check done earlier
-                // For this demo, we assume the user is a therapist
-                // if they are authenticated.
-                currentView = 'therapistLogin';
-                renderApp();
-            } else {
-                isAuthReady = true;
+                // The initial view is always the client form.
+                // The therapist view is only accessible after logging in.
                 currentView = 'clientForm';
                 renderApp();
-            }
-        });
+            });
+        };
 
-        initializeFirebase();
-        signIn();
+        initApp();
     </script>
 </body>
 </html>
