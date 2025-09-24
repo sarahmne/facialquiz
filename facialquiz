@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Holistic Spa Client System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7fafc;
+        }
+        .container {
+            max-width: 900px;
+        }
+        .form-container {
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 1.5rem;
+            background-color: white;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .text-section {
+            padding: 1rem;
+            background-color: #f0f4f8;
+            border-radius: 8px;
+        }
+        .btn-primary {
+            background-color: #3182ce;
+            color: white;
+            transition: background-color 0.2s;
+        }
+        .btn-primary:hover {
+            background-color: #2c5282;
+        }
+        .btn-secondary {
+            background-color: #e2e8f0;
+            color: #2d3748;
+            transition: background-color 0.2s;
+        }
+        .btn-secondary:hover {
+            background-color: #cbd5e0;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-content {
+            background-color: #fff;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            max-width: 400px;
+            width: 90%;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
+    <div id="app" class="w-full max-w-4xl container mx-auto">
+        <!-- Main Application View -->
+    </div>
+
+    <!-- Custom Modal for Messages -->
+    <div id="message-modal" class="modal">
+        <div class="modal-content text-center">
+            <h3 id="modal-title" class="text-xl font-bold mb-4"></h3>
+            <p id="modal-message" class="text-gray-700 mb-6"></p>
+            <button id="modal-close-btn" class="btn-primary py-2 px-4 rounded-md font-medium">OK</button>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, getDocs, onSnapshot, query, doc, setDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Firebase global variables are provided by the canvas environment
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const authToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+        let db, auth;
+        let userId = null;
+        let isAuthReady = false;
+        let currentView = 'clientForm';
+        let clientForms = [];
+        let selectedClientForm = null;
+
+        // Inventory of products, now with allergen information
+        const products = [
+            { id: 'c1', name: "Creamy Hydrating Cleanser", desc: "A gentle, nourishing cleanser that removes impurities without stripping natural oils.", category: "cleanser", dosha: "vata", allergens: ["nut", "soy"], concern: "hydration" },
+            { id: 'c2', name: "Balancing Aloe Cleansing Gel", desc: "A soothing gel cleanser to calm redness and reduce inflammation.", category: "cleanser", dosha: "pitta", allergens: ["fragrance"], concern: "redness" },
+            { id: 'c3', name: "Purifying Clay Cleanser", desc: "A deep-cleansing formula to detoxify and balance oily, congested skin.", category: "cleanser", dosha: "kapha", allergens: ["gluten"], concern: "oiliness" },
+            { id: 't1', name: "Nourishing Rose Toner", desc: "Hydrates and calms dry, sensitive skin.", category: "toner", dosha: "vata", allergens: ["fragrance"], concern: "hydration" },
+            { id: 't2', name: "Cooling Sandalwood Mist", desc: "Soothes and cools inflamed skin.", category: "toner", dosha: "pitta", allergens: ["alcohol"], concern: "redness" },
+            { id: 't3', name: "Invigorating Ginger Toner", desc: "Purifies and stimulates congested skin.", category: "toner", dosha: "kapha", allergens: [], concern: "oiliness" },
+            { id: 'm1', name: "Ashwagandha Hydrating Mask", desc: "Deeply nourishes and reduces fine lines.", category: "mask", dosha: "vata", allergens: ["nut"], concern: "hydration" },
+            { id: 'm2', name: "Neem & Rose Clay Mask", desc: "Calms redness and clarifies breakouts.", category: "mask", dosha: "pitta", allergens: ["clay"], concern: "redness" },
+            { id: 'm3', name: "Triphala Purifying Mask", desc: "Detoxifies and balances oil production.", category: "mask", dosha: "kapha", allergens: [], concern: "oiliness" },
+            { id: 's1', name: "Shatavari Repair Serum", desc: "Rejuvenates and adds moisture.", category: "serum", dosha: "vata", allergens: [], concern: "hydration" },
+            { id: 's2', name: "Jasmine Soothing Serum", desc: "Reduces inflammation and soothes irritation.", category: "serum", dosha: "pitta", allergens: ["fragrance"], concern: "redness" },
+            { id: 's3', name: "Amla Brightening Serum", desc: "Firms and adds a radiant glow.", category: "serum", dosha: "kapha", allergens: [], concern: "oiliness" },
+            { id: 'mo1', name: "Rich Almond & Jojoba Cream", desc: "Provides long-lasting moisture and protects the skin barrier.", category: "moisturizer", dosha: "vata", allergens: ["nut"], concern: "hydration" },
+            { id: 'mo2', name: "Light Cucumber & Mint Lotion", desc: "A lightweight, non-greasy lotion to hydrate and cool.", category: "moisturizer", dosha: "pitta", allergens: [], concern: "redness" },
+            { id: 'mo3', name: "Herbal Balancing Lotion", desc: "A mattifying lotion that controls shine and prevents breakouts.", category: "moisturizer", dosha: "kapha", allergens: ["herbal"], concern: "oiliness" },
+            { id: 'o1', name: "Sesame & Lavender Facial Oil", desc: "A deeply nourishing oil to combat dryness and improve elasticity.", category: "oil", dosha: "vata", allergens: ["sesame"], concern: "hydration" },
+            { id: 'o2', name: "Coconut & Rosehip Oil", desc: "A calming and restorative oil to reduce redness and promote healing.", category: "oil", dosha: "pitta", allergens: [], concern: "redness" },
+            { id: "o3", name: "Jojoba & Tea Tree Oil", desc: "A purifying oil that balances oil production and reduces congestion.", category: "oil", dosha: "kapha", allergens: [], concern: "oiliness" }
+        ];
+
+        // NEW CLIENT QUESTIONS (Indirect)
+        const clientQuestions = [
+            { id: 'q1', text: 'How do you typically handle stress?', options: { vata: 'I become anxious, restless, or forgetful.', pitta: 'I get irritable, frustrated, or angry.', kapha: 'I withdraw, feel heavy, or get tired.' } },
+            { id: 'q2', text: 'How would you describe your overall build or body type?', options: { vata: 'Naturally thin and slender.', pitta: 'Medium and muscular.', kapha: 'Solid and sturdy.' } },
+            { id: 'q3', text: 'How is your skin texture in general?', options: { vata: 'Dry, flaky, and delicate.', pitta: 'Warm, sensitive, and prone to redness.', kapha: 'Oily, smooth, and cool to the touch.' } },
+            { id: 'q4', text: 'How is your digestion and appetite?', options: { vata: 'Irregular appetite and often feel bloated.', pitta: 'Strong appetite, easily feel hungry and irritated.', kapha: 'Slow digestion, can easily skip meals without feeling hungry.' } },
+            { id: 'q5', text: 'What is your typical energy level throughout the day?', options: { vata: 'I have quick bursts of energy, but get tired easily.', pitta: 'I have intense, focused energy and a strong drive.', kapha: 'My energy is steady and consistent all day.' } },
+            { id: 'q6', text: 'How do you react to cold and hot weather?', options: { vata: 'I feel cold easily and prefer warm, sunny weather.', pitta: 'I get hot easily and prefer cool environments.', kapha: 'I tolerate all weather well, but I dislike damp conditions.' } },
+            { id: 'q7', text: 'When your skin is upset, what is it prone to?', options: { vata: 'Dry patches, flakiness, or fine lines.', pitta: 'Redness, breakouts, or inflammation.', kapha: 'Congestion, dullness, or large pores.' } },
+            { id: 'q8', text: 'Do you have any known allergies or skin sensitivities?', options: { 'nut': 'Nut allergies', 'soy': 'Soy allergies', 'gluten': 'Gluten sensitivity', 'none': 'None of the above' } },
+            { id: 'q9', text: 'How do you feel after a massage?', options: { vata: 'I feel relaxed, calm, and grounded.', pitta: 'I feel invigorated and energized.', kapha: 'I feel lighter and more alert.' } },
+            { id: 'q10', text: 'How do you prefer to get things done?', options: { vata: 'I like to be creative, change plans, and move quickly.', pitta: 'I like to be efficient, organized, and focused on the goal.', kapha: 'I like to be steady, thoughtful, and take my time.' } }
+        ];
+
+        // NEW PRACTITIONER QUESTIONS
+        const practitionerQuestions = [
+            { id: 'p1', text: 'Skin Texture:', options: ['Dry/Flaky', 'Smooth/Normal', 'Oily/Congested'] },
+            { id: 'p2', text: 'Complexion:', options: ['Dull/Lacking Radiance', 'Red/Inflamed', 'Clear/Even'] },
+            { id: 'p3', text: 'Pore Size:', options: ['Small/Invisible', 'Medium/Visible', 'Large/Noticeable'] },
+            { id: 'p4', text: 'Skin Temperature:', options: ['Cool/Cold', 'Warm/Hot', 'Normal/Balanced'] },
+            { id: 'p5', text: 'Skin Firmness:', options: ['Thin/Delicate', 'Medium/Resilient', 'Thick/Firm'] },
+            { id: 'p6', text: 'Hydration Level:', options: ['Dehydrated', 'Balanced', 'Overly Moist'] },
+            { id: 'p7', text: 'Signs of Aging:', options: ['Fine Lines/Crepe-like skin', 'Deep wrinkles/Sun damage', 'Few wrinkles/Firm skin'] },
+            { id: 'p8', text: 'Under-eye Area:', options: ['Hollow/Dark circles', 'Redness/Puffiness', 'Slightly puffy/Normal'] },
+            { id: 'p9', text: 'Muscle Tone:', options: ['Thin/Lacking tone', 'Defined/Muscular', 'Soft/Rounded'] },
+            { id: 'p10', text: 'Rosacea/Redness:', options: ['No or very little', 'Mild to moderate', 'Severe'] },
+            { id: 'p11', text: 'Observational Dosha:', options: ['Vata', 'Pitta', 'Kapha', 'Balanced'] },
+            { id: 'p12', text: 'In-person Primary Concern:', options: ['Hydration', 'Redness/Inflammation', 'Oiliness/Congestion'] },
+            { id: 'p13', text: 'Proposed Treatment Protocol:', type: 'textarea' },
+            { id: 'p14', text: 'Notes on Client Reaction:', type: 'textarea' }
+        ];
+
+        // --- Core Application Logic ---
+
+        const initializeFirebase = () => {
+            if (Object.keys(firebaseConfig).length > 0) {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+            } else {
+                console.error("Firebase config is missing. The app will not function correctly.");
+            }
+        };
+
+        const signIn = async () => {
+            if (!auth) return;
+            try {
+                if (authToken) {
+                    await signInWithCustomToken(auth, authToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (error) {
+                console.error("Firebase auth error:", error);
+            }
+        };
+
+        const showMessageModal = (title, message, callback = null) => {
+            const modal = document.getElementById('message-modal');
+            document.getElementById('modal-title').textContent = title;
+            document.getElementById('modal-message').textContent = message;
+            const closeBtn = document.getElementById('modal-close-btn');
+            closeBtn.onclick = () => {
+                modal.style.display = 'none';
+                if (callback) callback();
+            };
+            modal.style.display = 'flex';
+        };
+
+        const renderApp = () => {
+            const appEl = document.getElementById('app');
+            appEl.innerHTML = '';
+
+            if (!isAuthReady) {
+                appEl.innerHTML = '<div class="text-center text-gray-500">Loading...</div>';
+                return;
+            }
+
+            if (currentView === 'clientForm') {
+                renderClientForm(appEl);
+            } else if (currentView === 'therapistLogin') {
+                renderTherapistLogin(appEl);
+            } else if (currentView === 'therapistDashboard') {
+                renderTherapistDashboard(appEl);
+            } else if (currentView === 'clientDetails') {
+                renderClientDetails(appEl);
+            } else if (currentView === 'productManagement') {
+                renderProductManagement(appEl);
+            }
+        };
+
+        const renderClientForm = (container) => {
+            const quizHtml = clientQuestions.map(q => `
+                <div class="text-section">
+                    <p class="font-medium text-gray-700 mb-2">${q.text}</p>
+                    ${q.type === 'textarea' ? `<textarea id="${q.id}" name="${q.id}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 p-2"></textarea>` :
+                    `
+                    <div class="flex flex-col space-y-2">
+                        ${Object.keys(q.options).map(key => `
+                            <label class="inline-flex items-center">
+                                <input type="radio" name="${q.id}" value="${key}" required class="form-radio text-blue-600">
+                                <span class="ml-2 text-gray-600">${q.options[key]}</span>
+                            </label>
+                        `).join('')}
+                    </div>
+                    `}
+                </div>
+            `).join('');
+
+            const html = `
+                <div class="form-container">
+                    <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center">Client Intake & Dosha Quiz</h1>
+                    <p class="text-gray-600 mb-8 text-center">Please fill out this form to help us create a customized experience for you.</p>
+                    <form id="client-form" class="space-y-6">
+                        <div>
+                            <label for="clientName" class="block text-sm font-medium text-gray-700">Name</label>
+                            <input type="text" id="clientName" name="clientName" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 p-2">
+                        </div>
+                        <div>
+                            <label for="clientEmail" class="block text-sm font-medium text-gray-700">Email</label>
+                            <input type="email" id="clientEmail" name="clientEmail" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 p-2">
+                        </div>
+                        <div class="space-y-4">
+                            <h2 class="text-xl font-semibold text-gray-800 pt-4 border-t">Comprehensive Dosha Quiz</h2>
+                            <p class="text-sm text-gray-500">Please choose the option that best describes you.</p>
+                            ${quizHtml}
+                        </div>
+                        <div class="flex items-center justify-between pt-6 border-t">
+                            <button type="submit" id="submit-btn" class="btn-primary py-2 px-4 rounded-md font-medium">
+                                Submit Quiz
+                            </button>
+                            <button type="button" id="therapist-link" class="text-sm text-gray-500 hover:text-gray-700 transition">Are you a therapist? Login</button>
+                        </div>
+                    </form>
+                </div>
+            `;
+            container.innerHTML = html;
+
+            document.getElementById('client-form').addEventListener('submit', handleClientFormSubmit);
+            document.getElementById('therapist-link').addEventListener('click', () => {
+                currentView = 'therapistLogin';
+                renderApp();
+            });
+        };
+
+        const renderTherapistLogin = (container) => {
+            const html = `
+                <div class="form-container max-w-sm mx-auto">
+                    <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center">Therapist Login</h1>
+                    <form id="therapist-login-form" class="space-y-4">
+                        <div>
+                            <label for="password" class="block text-sm font-medium text-gray-700">Password</label>
+                            <input type="password" id="password" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 p-2">
+                        </div>
+                        <button type="submit" class="btn-primary w-full py-2 px-4 rounded-md font-medium">Log In</button>
+                    </form>
+                    <div id="login-error-message" class="mt-4 text-center text-sm text-red-500"></div>
+                </div>
+            `;
+            container.innerHTML = html;
+            document.getElementById('therapist-login-form').addEventListener('submit', handleTherapistLogin);
+        };
+
+        const renderTherapistDashboard = (container) => {
+            const html = `
+                <div class="form-container">
+                    <div class="flex items-center justify-between mb-6">
+                        <h1 class="text-3xl font-bold text-gray-800">Client Dashboard</h1>
+                        <div class="flex space-x-2">
+                            <button id="product-management-btn" class="btn-secondary py-2 px-4 rounded-md font-medium">Product Management</button>
+                            <button id="logout-btn" class="btn-secondary py-2 px-4 rounded-md font-medium">Log Out</button>
+                        </div>
+                    </div>
+                    <div class="text-sm text-gray-500 mb-4">
+                        <p>User ID: <span class="font-mono text-xs">${userId}</span></p>
+                    </div>
+                    <p class="text-gray-600 mb-6">Select a client to view their quiz results and perform a skin analysis.</p>
+                    <div id="client-list-container">
+                        <!-- Client list will be rendered here -->
+                    </div>
+                </div>
+            `;
+            container.innerHTML = html;
+            document.getElementById('logout-btn').addEventListener('click', () => {
+                signOut(auth);
+                currentView = 'therapistLogin';
+                renderApp();
+            });
+            document.getElementById('product-management-btn').addEventListener('click', () => {
+                currentView = 'productManagement';
+                renderApp();
+            });
+            fetchClients();
+        };
+
+        const renderProductManagement = (container) => {
+            const allAllergens = [...new Set(products.flatMap(p => p.allergens))];
+            
+            const html = `
+                <div class="form-container">
+                    <div class="flex items-center justify-between mb-6">
+                        <h1 class="text-3xl font-bold text-gray-800">Product Management</h1>
+                        <button id="back-to-dashboard-btn" class="btn-secondary py-2 px-4 rounded-md font-medium">← Back to Dashboard</button>
+                    </div>
+
+                    <p class="text-gray-600 mb-6">Use this page to view your product catalog and filter by allergens.</p>
+
+                    <div class="mb-6">
+                        <label for="allergen-filter" class="block text-sm font-medium text-gray-700">Filter by Allergen:</label>
+                        <select id="allergen-filter" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2">
+                            <option value="">All Products</option>
+                            ${allAllergens.map(allergen => `<option value="${allergen}">${allergen.charAt(0).toUpperCase() + allergen.slice(1)}</option>`).join('')}
+                        </select>
+                    </div>
+
+                    <div id="product-list" class="space-y-4">
+                        <!-- Product list will be rendered here -->
+                    </div>
+                </div>
+            `;
+            container.innerHTML = html;
+
+            document.getElementById('back-to-dashboard-btn').addEventListener('click', () => {
+                currentView = 'therapistDashboard';
+                renderApp();
+            });
+
+            const allergenFilterEl = document.getElementById('allergen-filter');
+            allergenFilterEl.addEventListener('change', (e) => {
+                renderFilteredProducts(e.target.value);
+            });
+
+            renderFilteredProducts(allergenFilterEl.value);
+        };
+
+        const renderFilteredProducts = (filterAllergen) => {
+            const productListEl = document.getElementById('product-list');
+            const filteredProducts = products.filter(p => !filterAllergen || p.allergens.includes(filterAllergen));
+            
+            if (filteredProducts.length === 0) {
+                productListEl.innerHTML = `<p class="text-gray-600 text-center">No products found for this allergen.</p>`;
+                return;
+            }
+
+            const productsHtml = filteredProducts.map(p => `
+                <div class="bg-gray-50 p-4 rounded-md border border-gray-200">
+                    <h2 class="font-semibold text-lg text-gray-800">${p.name}</h2>
+                    <p class="text-sm text-gray-600">${p.desc}</p>
+                    <p class="text-xs text-gray-500 mt-2">
+                        <span class="font-medium">Dosha:</span> ${p.dosha.toUpperCase()} |
+                        <span class="font-medium">Allergens:</span> ${p.allergens.length > 0 ? p.allergens.join(', ') : 'None'}</p>
+                    </p>
+                </div>
+            `).join('');
+            productListEl.innerHTML = productsHtml;
+        };
+
+        const generateRecommendations = (clientDosha, clientAllergies, therapistConcern) => {
+            const recommendations = {};
+            const categories = ['cleanser', 'toner', 'mask', 'serum', 'moisturizer', 'oil'];
+            
+            const clientDoshas = clientDosha.toLowerCase().split(' & ').map(d => d.trim());
+            const therapistConcernLowerCase = therapistConcern.toLowerCase().split('/')[0];
+
+            const concernMap = {
+                'Hydration': ['cleanser', 'toner', 'mask', 'serum', 'moisturizer', 'oil'],
+                'Redness/Inflammation': ['cleanser', 'toner', 'mask', 'serum', 'oil'],
+                'Oiliness/Congestion': ['cleanser', 'toner', 'mask', 'serum', 'oil']
+            };
+
+            const relevantCategories = concernMap[therapistConcern] || categories;
+
+            relevantCategories.forEach(category => {
+                const suitableProducts = products.filter(p => 
+                    p.category === category &&
+                    clientDoshas.some(cd => p.dosha === cd) && 
+                    p.concern === therapistConcernLowerCase &&
+                    !clientAllergies.some(allergy => p.allergens.includes(allergy))
+                );
+                
+                if (suitableProducts.length > 0) {
+                    recommendations[category] = suitableProducts[0];
+                }
+            });
+
+            return recommendations;
+        };
+
+        const renderRecommendations = (recommendations) => {
+            const recommendationsEl = document.getElementById('recommendations-list');
+            const sections = {
+                cleanser: 'Cleanser',
+                toner: 'Toner',
+                mask: 'Mask',
+                serum: 'Serum',
+                moisturizer: 'Moisturizer',
+                oil: 'Facial Oil'
+            };
+
+            const recHtml = Object.keys(sections).map(key => {
+                const product = recommendations[key];
+                return `
+                    <div class="bg-blue-50 p-4 rounded-md border border-blue-200">
+                        <h3 class="font-semibold text-gray-800 mb-1">${sections[key]} Recommendation</h3>
+                        ${product ?
+                        `<p class="text-sm text-blue-800 font-medium">${product.name}</p>
+                         <p class="text-xs text-blue-600 mt-1">${product.desc}</p>`
+                        : `<p class="text-sm text-gray-500">No suitable product found for this category and client.</p>`}
+                    </div>
+                `;
+            }).join('');
+            
+            if (Object.keys(recommendations).length === 0) {
+                recommendationsEl.innerHTML = `<p class="text-gray-600">No product recommendations could be generated based on the client's profile.</p>`;
+            } else {
+                recommendationsEl.innerHTML = recHtml;
+            }
+        };
+
+        const renderClientDetails = (container) => {
+            if (!selectedClientForm) {
+                container.innerHTML = '<div class="text-center text-gray-500">Client not found.</div>';
+                return;
+            }
+
+            const clientAnswersHtml = Object.keys(selectedClientForm.clientAnswers).map(key => {
+                const q = clientQuestions.find(q => q.id === key);
+                const answerText = q.options[selectedClientForm.clientAnswers[key]] || selectedClientForm.clientAnswers[key];
+                return `
+                    <div class="text-sm text-gray-700">
+                        <span class="font-semibold">${q.text.replace('?', '')}:</span> ${answerText}
+                    </div>
+                `;
+            }).join('');
+
+            const practitionerHtml = practitionerQuestions.map(q => {
+                const savedAnswer = selectedClientForm.therapistNotes?.[q.id] || '';
+                if (q.type === 'textarea') {
+                    return `
+                        <div>
+                            <label for="${q.id}" class="block text-sm font-medium text-gray-700">${q.text}</label>
+                            <textarea id="${q.id}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2" rows="3">${savedAnswer}</textarea>
+                        </div>
+                    `;
+                } else {
+                    return `
+                        <div>
+                            <label for="${q.id}" class="block text-sm font-medium text-gray-700">${q.text}</label>
+                            <select id="${q.id}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2">
+                                <option value="">Select an option</option>
+                                ${q.options.map(opt => `<option value="${opt}" ${savedAnswer === opt ? 'selected' : ''}>${opt}</option>`).join('')}
+                            </select>
+                        </div>
+                    `;
+                }
+            }).join('');
+
+            const recommendations = generateRecommendations(selectedClientForm.doshaResult, selectedClientForm.clientAnswers.q8, selectedClientForm.therapistNotes?.p12 || '');
+
+            const html = `
+                <div class="form-container">
+                    <div class="flex items-center justify-between mb-6">
+                        <h1 class="text-3xl font-bold text-gray-800">${selectedClientForm.clientName}'s Profile</h1>
+                        <button id="back-to-dashboard-btn" class="btn-secondary py-2 px-4 rounded-md font-medium">← Back to Dashboard</button>
+                    </div>
+
+                    <!-- Client Quiz Results -->
+                    <div class="space-y-4 mb-8">
+                        <h2 class="text-xl font-semibold text-gray-800">Client Quiz Results</h2>
+                        <div class="bg-gray-50 p-4 rounded-md border border-gray-200">
+                            <h3 class="font-semibold text-lg text-blue-600 mb-2">Recommended Dosha Type: ${selectedClientForm.doshaResult}</h3>
+                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                ${clientAnswersHtml}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Therapist Analysis Form -->
+                    <div class="space-y-4 mb-8">
+                        <h2 class="text-xl font-semibold text-gray-800">Therapist Analysis</h2>
+                        <form id="therapist-analysis-form" class="space-y-4">
+                            ${practitionerHtml}
+                            <button type="submit" class="btn-primary w-full py-2 px-4 rounded-md font-medium">Save Analysis</button>
+                        </form>
+                    </div>
+
+                    <!-- Product Recommendations -->
+                    <div class="space-y-4">
+                        <h2 class="text-xl font-semibold text-gray-800">Product Recommendations</h2>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="recommendations-list">
+                            <!-- Recommendations will be rendered here -->
+                        </div>
+                    </div>
+                </div>
+            `;
+            container.innerHTML = html;
+
+            renderRecommendations(recommendations);
+
+            document.getElementById('back-to-dashboard-btn').addEventListener('click', () => {
+                currentView = 'therapistDashboard';
+                renderApp();
+            });
+
+            document.getElementById('therapist-analysis-form').addEventListener('submit', handleTherapistAnalysisSubmit);
+        };
+
+        const calculateDosha = (answers) => {
+            const scores = { vata: 0, pitta: 0, kapha: 0 };
+            
+            // Score based on client answers
+            clientQuestions.filter(q => q.id !== 'q8').forEach(q => {
+                const answer = answers[q.id];
+                if (answer in scores) {
+                    scores[answer]++;
+                }
+            });
+
+            // Get top two scores
+            const sortedDoshas = Object.keys(scores).sort((a, b) => scores[b] - scores[a]);
+            const primary = sortedDoshas[0];
+            const secondary = sortedDoshas[1];
+
+            if (scores[primary] > scores[secondary]) {
+                return primary.charAt(0).toUpperCase() + primary.slice(1);
+            } else {
+                return `${primary.charAt(0).toUpperCase() + primary.slice(1)} & ${secondary.charAt(0).toUpperCase() + secondary.slice(1)}`;
+            }
+        };
+
+        const handleClientFormSubmit = async (e) => {
+            e.preventDefault();
+            const form = e.target;
+            const formData = new FormData(form);
+            const clientAnswers = {};
+
+            for (let [key, value] of formData.entries()) {
+                clientAnswers[key] = value;
+            }
+
+            const doshaResult = calculateDosha(clientAnswers);
+
+            const docData = {
+                clientName: clientAnswers.clientName,
+                clientEmail: clientAnswers.clientEmail,
+                clientAnswers: clientAnswers,
+                doshaResult: doshaResult,
+                therapistNotes: null,
+                timestamp: Date.now()
+            };
+
+            const docRef = collection(db, `artifacts/${appId}/public/data/clientForms`);
+            try {
+                await addDoc(docRef, docData);
+                showMessageModal('Success!', 'Your quiz has been submitted. Thank you!', () => {
+                    form.reset();
+                    currentView = 'clientForm';
+                    renderApp();
+                });
+            } catch (error) {
+                console.error("Error adding document:", error);
+                showMessageModal('Error', 'Failed to submit the form. Please try again.');
+            }
+        };
+
+        const handleTherapistLogin = (e) => {
+            e.preventDefault();
+            const password = document.getElementById('password').value;
+            const errorMessage = document.getElementById('login-error-message');
+            // Check against a hardcoded password for a simple demo.
+            // In a real application, you would use a secure authentication system.
+            if (password === 'spa-admin-2025') {
+                showMessageModal('Welcome', 'You have successfully logged in as a therapist.', () => {
+                    currentView = 'therapistDashboard';
+                    renderApp();
+                });
+            } else {
+                errorMessage.textContent = 'Incorrect password. Please try again.';
+            }
+        };
+
+        const fetchClients = () => {
+            const clientListEl = document.getElementById('client-list-container');
+            clientListEl.innerHTML = '<div class="text-center text-gray-500">Loading clients...</div>';
+
+            const clientFormsRef = collection(db, `artifacts/${appId}/public/data/clientForms`);
+            onSnapshot(clientFormsRef, (snapshot) => {
+                clientForms = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderClientList(clientForms);
+            }, (error) => {
+                console.error("Error fetching documents:", error);
+                clientListEl.innerHTML = '<div class="text-center text-red-500">Failed to load client data.</div>';
+            });
+        };
+
+        const renderClientList = (clients) => {
+            const clientListEl = document.getElementById('client-list-container');
+            if (clients.length === 0) {
+                clientListEl.innerHTML = `<p class="text-gray-600 text-center">No clients have submitted the quiz yet.</p>`;
+                return;
+            }
+            
+            const clientHtml = clients.map(client => `
+                <div class="bg-gray-50 p-4 rounded-md border border-gray-200 mb-4 flex justify-between items-center">
+                    <div>
+                        <h3 class="font-semibold text-lg text-gray-800">${client.clientName}</h3>
+                        <p class="text-sm text-gray-600">${client.doshaResult}</p>
+                    </div>
+                    <button class="view-client-btn btn-secondary py-2 px-4 rounded-md font-medium" data-id="${client.id}">View Profile</button>
+                </div>
+            `).join('');
+            
+            clientListEl.innerHTML = clientHtml;
+            
+            document.querySelectorAll('.view-client-btn').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const clientId = e.target.getAttribute('data-id');
+                    selectedClientForm = clientForms.find(c => c.id === clientId);
+                    currentView = 'clientDetails';
+                    renderApp();
+                });
+            });
+        };
+
+        const handleTherapistAnalysisSubmit = async (e) => {
+            e.preventDefault();
+            const form = e.target;
+            const formData = new FormData(form);
+            const therapistNotes = {};
+            
+            practitionerQuestions.forEach(q => {
+                const value = form.querySelector(`#${q.id}`).value;
+                therapistNotes[q.id] = value;
+            });
+            
+            const docRef = doc(db, `artifacts/${appId}/public/data/clientForms`, selectedClientForm.id);
+            try {
+                await updateDoc(docRef, {
+                    therapistNotes: therapistNotes
+                });
+                showMessageModal('Analysis Saved!', 'The client analysis has been successfully updated.');
+            } catch (error) {
+                console.error("Error updating document:", error);
+                showMessageModal('Error', 'Failed to save analysis. Please try again.');
+            }
+        };
+
+        // --- Initialize the App ---
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                userId = user.uid;
+                isAuthReady = true;
+                // Check if user is therapist based on a specific UID or
+                // a hardcoded password check done earlier
+                // For this demo, we assume the user is a therapist
+                // if they are authenticated.
+                currentView = 'therapistLogin';
+                renderApp();
+            } else {
+                isAuthReady = true;
+                currentView = 'clientForm';
+                renderApp();
+            }
+        });
+
+        initializeFirebase();
+        signIn();
+    </script>
+</body>
+</html>
